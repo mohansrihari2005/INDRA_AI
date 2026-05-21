@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime
 from typing import AsyncGenerator
 from openai import OpenAI
@@ -14,13 +15,44 @@ from services.openweather import get_current_weather
 
 
 async def run_disaster_pipeline(
-    place: str, openai_api_key: str
+    place: str, openai_api_key: str, use_autogen: bool = False
 ) -> AsyncGenerator[dict, None]:
     """
     Main coordinator that orchestrates the full agent pipeline.
+    Can use either AutoGen (if use_autogen=True) or legacy sequential agents.
+    
     Yields SSE events for each stage.
+    
+    AutoGen mode:
+    - Uses GroupChat to coordinate agents
+    - More sophisticated agent communication
+    - Better for complex multi-agent scenarios
+    
+    Legacy mode (default):
+    - Sequential agent execution
+    - Direct data passing between agents
+    - Better performance for simple pipelines
     """
+    
+    # Try to use AutoGen if requested
+    if use_autogen:
+        try:
+            from .coordinator_autogen import run_disaster_pipeline_autogen
+            async for event in run_disaster_pipeline_autogen(place, openai_api_key):
+                yield event
+            return
+        except ImportError:
+            yield {
+                "event": "warning",
+                "message": "AutoGen not available. Falling back to legacy pipeline.",
+            }
+        except Exception as e:
+            yield {
+                "event": "warning",
+                "message": f"AutoGen pipeline failed: {str(e)}. Using legacy pipeline.",
+            }
 
+    # Legacy pipeline execution
     openai_client = OpenAI(api_key=openai_api_key)
 
     try:

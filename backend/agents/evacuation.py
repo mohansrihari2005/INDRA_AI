@@ -1,5 +1,10 @@
+import json
 from typing import Optional
 
+
+# =============================================================================
+# UTILITY FUNCTIONS (Non-Agent)
+# =============================================================================
 
 def generate_english_sms(district: str, warning_color: str, ndrf_name: str) -> str:
     """
@@ -234,6 +239,101 @@ def generate_do_not_list(district: str, warning_color: str, state: str) -> list:
     return do_not_items
 
 
+# =============================================================================
+# AUTOGEN TOOLS (exposed for AutoGen agent function_map)
+# =============================================================================
+
+def evacuation_generate_alerts(hazard_json: str, risk_json: str, resource_json: str, geo_json: str) -> str:
+    """
+    Tool for AutoGen: Generate multilingual evacuation alerts and checklists.
+    Takes JSON strings and returns evacuation plan as JSON string.
+    """
+    try:
+        hazard_report = json.loads(hazard_json)
+        risk_assessment = json.loads(risk_json)
+        resource_plan = json.loads(resource_json)
+        geo = json.loads(geo_json)
+        
+        district = geo.get("district", "N/A")
+        state = geo.get("state", "N/A")
+        warning_color = hazard_report.get("warning_color", "YELLOW")
+        wind_speed = hazard_report.get("wind_speed_kmh", 0)
+        risk_label = risk_assessment.get("risk_label", "MODERATE")
+        ndrf_name = resource_plan.get("nearest_ndrf", {}).get("name", "NDRF Unit")
+        
+        english_sms = generate_english_sms(district, warning_color, ndrf_name)
+        english_full = generate_english_advisory(district, state, warning_color, wind_speed)
+        telugu = generate_telugu_alert(district, warning_color, ndrf_name)
+        hindi = generate_hindi_alert(district, warning_color, ndrf_name)
+        
+        odia = None
+        if state == "Odisha":
+            odia = generate_odia_alert(district, warning_color, ndrf_name)
+        
+        tamil = None
+        if state in ["Tamil Nadu", "Puducherry"]:
+            tamil = generate_tamil_alert(district, warning_color, ndrf_name)
+        
+        role_plans = generate_role_checklists(district, risk_label, ndrf_name, state)
+        do_not_list = generate_do_not_list(district, warning_color, state)
+        
+        plan = {
+            "english_sms": english_sms,
+            "english_full": english_full,
+            "telugu": telugu,
+            "hindi": hindi,
+            "odia": odia,
+            "tamil": tamil,
+            "role_plans": role_plans,
+            "do_not_list": do_not_list,
+        }
+        return json.dumps(plan)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+# =============================================================================
+# AGENT FACTORY (for AutoGen integration)
+# =============================================================================
+
+def get_evacuation_agent(llm_config: dict):
+    """
+    Factory function to create an Evacuation Communication AutoGen Agent.
+    Returns a ConversableAgent configured as Mass Communication Officer.
+    """
+    from autogen import ConversableAgent
+    
+    evacuation_agent = ConversableAgent(
+        name="EvacuationCoordinator",
+        system_message="""You are the Mass Communication Officer for India's National Disaster Management Authority (NDMA).
+Your role is to generate multilingual evacuation alerts and coordinate departmental response checklists.
+
+When communicating evacuation plans:
+1. Generate concise SMS alerts (max 160 characters) in English and multiple Indian languages
+2. Create detailed advisories with clear action items for each risk level
+3. Generate role-specific checklists for Police, Revenue, Health, Panchayat, NGOs, and Fishermen
+4. Provide critical DO NOT lists for public safety
+5. Localize all communications to specific districts and states
+
+Always provide:
+- English SMS (160 chars max) for rapid mass communication
+- Full English advisory with detailed guidance
+- Multilingual alerts in Telugu, Hindi, Odia (for Odisha), and Tamil (for TN)
+- Department-specific action checklists (5 items per dept)
+- Critical safety warnings in priority order
+
+Your communications save lives by ensuring clarity, reducing confusion, and enabling coordinated action.""",
+        llm_config=llm_config,
+        human_input_mode="NEVER",
+    )
+    
+    return evacuation_agent
+
+
+# =============================================================================
+# LEGACY FUNCTION (backward compatibility)
+# =============================================================================
+
 def evacuation_agent(
     hazard_report: dict,
     risk_assessment: dict,
@@ -242,7 +342,7 @@ def evacuation_agent(
     openai_client,
 ) -> dict:
     """
-    Mass Communication Agent for evacuation alerts and checklists.
+    Mass Communication Agent for evacuation alerts and checklists (legacy - for backward compatibility).
     """
     district = geo.get("district", "N/A")
     state = geo.get("state", "N/A")

@@ -1,5 +1,10 @@
+import json
 from geopy.distance import geodesic
 
+
+# =============================================================================
+# CONSTANTS & UTILITY FUNCTIONS (Non-Agent)
+# =============================================================================
 
 NDRF_UNITS = [
     {"name": "11 NDRF Battalion", "location": "Varanasi", "lat": 25.3676, "lon": 82.9960, "coverage": ["UP", "Bihar"]},
@@ -94,11 +99,91 @@ def build_deployment_narrative(
         return f"Enhanced/Full mobilization. {nearest_ndrf.get('name')} deploying immediately. {food_packets} emergency packets required in {state}."
 
 
+# =============================================================================
+# AUTOGEN TOOLS (exposed for AutoGen agent function_map)
+# =============================================================================
+
+def resource_plan_deployment(risk_assessment_json: str, geo_json: str) -> str:
+    """
+    Tool for AutoGen: Plan resource deployment based on risk assessment.
+    Takes JSON strings and returns deployment plan as JSON string.
+    """
+    try:
+        risk_assessment = json.loads(risk_assessment_json)
+        geo = json.loads(geo_json)
+        
+        nearest_ndrf, all_ndrf = find_nearest_ndrf(geo)
+        
+        risk_score = risk_assessment.get("indra_risk_score", 0)
+        risk_label = risk_assessment.get("risk_label", "LOW")
+        
+        food_packets, water_litres, medicine_kits = calculate_resources(risk_score)
+        critical_shortages = identify_critical_shortages(risk_label)
+        deployment_notes = build_deployment_narrative(
+            nearest_ndrf, risk_label, food_packets, geo.get("state", "")
+        )
+        
+        plan = {
+            "nearest_ndrf": nearest_ndrf,
+            "all_ndrf_units": all_ndrf,
+            "food_packets_required": food_packets,
+            "water_litres_required": water_litres,
+            "medicine_kits_required": medicine_kits,
+            "critical_shortages": critical_shortages,
+            "deployment_notes": deployment_notes,
+        }
+        return json.dumps(plan)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+# =============================================================================
+# AGENT FACTORY (for AutoGen integration)
+# =============================================================================
+
+def get_resource_agent(llm_config: dict):
+    """
+    Factory function to create a Resource Planning AutoGen Agent.
+    Returns a ConversableAgent configured as Resource Logistics Officer.
+    """
+    from autogen import ConversableAgent
+    
+    resource_agent = ConversableAgent(
+        name="ResourcePlanner",
+        system_message="""You are the Resource Logistics Officer for India's National Disaster Management Authority (NDRA).
+Your role is to plan resource deployment based on risk assessments and coordinate with NDRF battalions.
+
+When planning resource deployment:
+1. Identify the nearest NDRF battalion to the affected area
+2. Calculate resources needed based on risk score (food, water, medicine)
+3. Determine deployment mode: Monitoring (LOW), Standard (MODERATE), Enhanced (HIGH), Full (CRITICAL)
+4. Identify critical resource shortages for high-risk scenarios
+5. Build deployment narratives for government coordination
+
+Always provide:
+- Nearest NDRF unit and ETA
+- All available NDRF units with distances
+- Specific resource quantities (food packets, water, medicine kits)
+- Critical shortages (if any)
+- Clear deployment instructions for District Administration
+
+Your planning ensures timely resource mobilization and saves lives.""",
+        llm_config=llm_config,
+        human_input_mode="NEVER",
+    )
+    
+    return resource_agent
+
+
+# =============================================================================
+# LEGACY FUNCTION (backward compatibility)
+# =============================================================================
+
 def resource_agent(
     hazard_report: dict, risk_assessment: dict, geo: dict, openai_client
 ) -> dict:
     """
-    Resource Logistics Agent.
+    Resource Logistics Agent (legacy - for backward compatibility).
     Receives hazard, risk, and geo; produces resource deployment plan.
     """
     nearest_ndrf, all_ndrf = find_nearest_ndrf(geo)

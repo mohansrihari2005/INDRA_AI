@@ -57,12 +57,18 @@ def health_check():
 
 class GenerateRequest(BaseModel):
     place: str
+    use_autogen: bool = False  # Toggle AutoGen mode
 
 
 @app.post("/api/generate/stream")
 async def generate_stream(request: GenerateRequest):
     """
     Stream disaster response brief using SSE.
+    
+    Parameters:
+    - place: Location name (e.g., "Visakhapatnam, Andhra Pradesh")
+    - use_autogen: boolean to enable AutoGen GroupChat orchestration (default: False)
+    
     API key is read from environment variables.
     """
     if not request.place:
@@ -73,10 +79,11 @@ async def generate_stream(request: GenerateRequest):
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured in server environment")
 
     async def event_stream():
-        async for event in run_disaster_pipeline(request.place, openai_api_key):
+        async for event in run_disaster_pipeline(request.place, openai_api_key, use_autogen=request.use_autogen):
             yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
 
 
 @app.get("/api/imd/live")

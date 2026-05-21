@@ -1,4 +1,10 @@
 
+import json
+
+
+# =============================================================================
+# CONSTANTS & UTILITY FUNCTIONS (Non-Agent)
+# =============================================================================
 
 NDRF_COMPENSATION = {
     "death": "Rs 4,00,000 per family",
@@ -144,6 +150,83 @@ def build_closing_statement(district: str, state: str, risk_label: str) -> str:
         return f"Support programs for {district} will focus on preventing long-term economic disruption and restoring normalcy."
 
 
+# =============================================================================
+# AUTOGEN TOOLS (exposed for AutoGen agent function_map)
+# =============================================================================
+
+def recovery_plan_coordination(risk_json: str, geo_json: str) -> str:
+    """
+    Tool for AutoGen: Create post-disaster recovery coordination plan.
+    Takes JSON strings and returns recovery plan as JSON string.
+    """
+    try:
+        risk_assessment = json.loads(risk_json)
+        geo = json.loads(geo_json)
+        
+        state = geo.get("state", "")
+        district = geo.get("district", "")
+        risk_label = risk_assessment.get("risk_label", "MODERATE")
+        
+        timeline = build_recovery_timeline(state, district, risk_label)
+        closing = build_closing_statement(district, state, risk_label)
+        
+        plan = {
+            "days": timeline,
+            "ndrf_compensation": NDRF_COMPENSATION,
+            "closing_statement": closing,
+        }
+        return json.dumps(plan)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+# =============================================================================
+# AGENT FACTORY (for AutoGen integration)
+# =============================================================================
+
+def get_recovery_agent(llm_config: dict):
+    """
+    Factory function to create a Recovery Coordination AutoGen Agent.
+    Returns a ConversableAgent configured as Recovery Coordinator.
+    """
+    from autogen import ConversableAgent
+    
+    recovery_agent = ConversableAgent(
+        name="RecoveryCoordinator",
+        system_message="""You are the Post-Disaster Recovery Coordinator for India's National Disaster Management Authority (NDMA).
+Your role is to plan and orchestrate the multi-phased recovery effort following disasters.
+
+When coordinating recovery:
+1. Build 7-day phased recovery timeline with specific daily targets
+2. Identify government schemes to activate at each phase (PM Awas Yojana, MGNREGS, PMFBY, etc.)
+3. Outline daily collector actions and district-level coordination points
+4. Reference real NDRF compensation rates for different property types
+5. Scale recovery intensity based on risk level (CRITICAL = 3x multiplier, HIGH = 2x, etc.)
+
+Always provide:
+- 7-day timeline with 5-7 priority tasks per day
+- Specific collector actions for each phase
+- Government schemes activated at each stage
+- Real compensation rates and eligibility criteria
+- Forward-looking closing statement tailored to risk level
+
+Your coordination ensures systemic recovery addressing:
+- Emergency Response & Stabilization (Days 1-2)
+- Infrastructure Restoration (Days 3-5)
+- Livelihood & Market Recovery (Days 6-7)
+
+Recovery is not just reconstruction—it's restoring dignity and normalcy.""",
+        llm_config=llm_config,
+        human_input_mode="NEVER",
+    )
+    
+    return recovery_agent
+
+
+# =============================================================================
+# LEGACY FUNCTION (backward compatibility)
+# =============================================================================
+
 def recovery_agent(
     hazard_report: dict,
     risk_assessment: dict,
@@ -153,7 +236,7 @@ def recovery_agent(
     openai_client,
 ) -> dict:
     """
-    Post-Disaster Recovery Coordinator Agent.
+    Post-Disaster Recovery Coordinator Agent (legacy - for backward compatibility).
     Produces 7-day phased recovery plan with real government schemes.
     """
     state = geo.get("state", "")
